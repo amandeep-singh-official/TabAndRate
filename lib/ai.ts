@@ -155,7 +155,8 @@ export async function generateReviews(
       return await generateWithGemini(params, count);
     } catch (fallbackError) {
       console.error("[AI] Both providers failed:", fallbackError);
-      throw new Error("AI generation unavailable. Please try again.");
+      const fallbackMsg = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+      throw new Error(`AI generation unavailable. Groq & Gemini failed. Last error: ${fallbackMsg}`);
     }
   }
 }
