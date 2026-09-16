@@ -1,0 +1,260 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String?   // null for OAuth users
+
+  // Relations
+  accounts Account[]
+  sessions Session[]
+  business Business?
+  cafe     CafeProfile?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── Business ────────────────────────────────────────────────────────────────
+
+model Business {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Core identity
+  name      String
+  slug      String  @unique
+  reviewUrl String  // Manually pasted Google Review URL
+  address   String?
+  phone     String?
+  website   String?
+
+  // Category
+  category       String  // Restaurant | Salon | Clinic | Gym | Retail | Hotel | Other
+  customIndustry String? // When category = "Other"
+  monthlyCustomers String? // "1-50" | "51-200" | "200+"
+  hearAboutUs    String?
+
+  // AI context — merchant describes products/services
+  // This gets injected into AI prompts for richer review drafts
+  customDescription String?
+
+  // Tags shown to customers as clickable chips
+  // Stored as array of strings, pre-seeded by category
+  tags String[]
+
+  // Branding
+  logoUrl      String?
+  primaryColor String  @default("#4F46E5")
+  ctaText      String  @default("Scan to review us!")
+
+  isActive Boolean @default(true)
+
+  events    AnalyticsEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Analytics ───────────────────────────────────────────────────────────────
+
+model AnalyticsEvent {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  // "visit" | "generate" | "redirect" | "intercepted"
+  type String
+
+  // Optional context: { language, draftIndex, starRating, tags }
+  metadata Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([businessId, type])
+  @@index([businessId, createdAt])
+}
+
+// ─── Micro-Cafe Management & Accounting ─────────────────────────────────────
+
+model CafeProfile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cafeName    String
+  tagline     String?
+  address     String?
+  phone       String?
+  city        String   @default("Chandigarh")
+  currency    String   @default("INR")
+  openingFloat Float   @default(1000)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  categories      MenuCategory[]
+  menuItems       MenuItem[]
+  orders          Order[]
+  expenses        DailyExpense[]
+  fixedCosts      FixedCost[]
+  vendorDues      VendorDue[]
+  reconciliations CashReconciliation[]
+}
+
+model MenuCategory {
+  id        String   @id @default(cuid())
+  cafeId    String
+  cafe      CafeProfile @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  name      String   // e.g. "Starters", "Beverages", "Desserts"
+  color     String   @default("#dc2626") // Card color as seen in reference UI
+  icon      String?  @default("🍽️")
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  items     MenuItem[]
+
+  @@index([cafeId])
+}
+
+model MenuItem {
+  id          String       @id @default(cuid())
+  cafeId      String
+  cafe        CafeProfile  @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  categoryId  String
+  category    MenuCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name        String       // e.g. "Gulab Jamun", "Espresso"
+  price       Float        // e.g. 100.00
+  isAvailable Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+
+  orderItems  OrderItem[]
+
+  @@index([cafeId, categoryId])
+}
+
+model Order {
+  id            String      @id @default(cuid())
+  orderNumber   Int         // e.g. 1001 or daily sequential
+  tokenNumber   Int         // daily token #1, #2, #3 for kitchen/counter calling
+  cafeId        String
+  cafe          CafeProfile @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  total         Float
+  paymentMethod String      // "CASH" | "ONLINE"
+  orderType     String      @default("TAKEAWAY")
+  status        String      @default("COMPLETED") // "COMPLETED" | "VOID"
+  note          String?
+  createdAt     DateTime    @default(now())
+
+  items         OrderItem[]
+
+  @@index([cafeId, createdAt])
+}
+
+model OrderItem {
+  id          String    @id @default(cuid())
+  orderId     String
+  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId  String?
+  menuItem    MenuItem? @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
+  name        String    // Snapshot of item name
+  quantity    Int
+  priceAtSale Float
+}
+
+model DailyExpense {
+  id        String      @id @default(cuid())
+  cafeId    String
+  cafe      CafeProfile @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  category  String      // "MILK" | "BEANS" | "ICE" | "PACKAGING" | "SUGAR" | "OTHER"
+  amount    Float
+  note      String?
+  paidFrom  String      @default("CASH") // "CASH" (drawer) | "ONLINE" (bank)
+  date      DateTime    @default(now())
+
+  @@index([cafeId, date])
+}
+
+model FixedCost {
+  id        String      @id @default(cuid())
+  cafeId    String
+  cafe      CafeProfile @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  type      String      // "RENT" | "ELECTRICITY" | "SALARY"
+  amount    Float
+  month     Int         // 1 - 12
+  year      Int
+
+  @@unique([cafeId, type, month, year])
+}
+
+model VendorDue {
+  id          String      @id @default(cuid())
+  cafeId      String
+  cafe        CafeProfile @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  vendorName  String
+  amount      Float
+  dueDate     DateTime?
+  isPaid      Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+}
+
+model CashReconciliation {
+  id           String      @id @default(cuid())
+  cafeId       String
+  cafe         CafeProfile @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  date         DateTime    @default(now())
+  openingFloat Float       @default(1000)
+  expectedCash Float
+  actualCash   Float
+  discrepancy  Float
+  note         String?
+
+  @@index([cafeId, date])
+}
+
