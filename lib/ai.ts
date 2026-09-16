@@ -62,7 +62,7 @@ async function generateWithGroq(
   if (!apiKey) throw new Error("GROQ_API_KEY is not configured");
 
   const groq = new Groq({ apiKey });
-  const modelsToTry = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"];
+  const modelsToTry = ["llama3-8b-8192", "llama3-70b-8192"];
 
   let lastError: Error | null = null;
   for (const model of modelsToTry) {
@@ -106,7 +106,7 @@ async function generateWithGemini(
   if (!apiKey) throw new Error("GEMINI_API_KEY is not configured");
 
   const gemini = new GoogleGenerativeAI(apiKey);
-  const modelsToTry = ["gemini-1.5-flash", "gemini-2.0-flash"];
+  const modelsToTry = ["gemini-3.6-flash", "gemini-1.5-flash"];
 
   let lastError: Error | null = null;
   for (const modelName of modelsToTry) {
